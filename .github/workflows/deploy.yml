@@ -1,0 +1,59 @@
+name: Laravel EC2 Deployment
+
+# Trigger workflow on push to main branch
+on:
+  push:
+    branches:
+      - main  # Change to your branch if different
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    # Step 4.1: Checkout the repository code
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    # Step 4.2: Setup SSH key
+    - name: Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.EC2_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+
+    # Step 4.3: Add EC2 host to known_hosts
+    - name: Add EC2 to known_hosts
+      run: |
+        ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+    # Step 4.4: Deploy commands
+    - name: Deploy Laravel to EC2
+      run: |
+        ssh -i ~/.ssh/id_rsa ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+          echo "=== Navigating to project folder ==="
+          cd ${{ secrets.TARGET_DIR }}
+
+          echo "=== Pull latest code ==="
+          git reset --hard
+          git pull origin main
+
+          echo "=== Install Composer dependencies ==="
+          composer install --no-interaction --prefer-dist --optimize-autoloader
+
+          echo "=== Run database migrations ==="
+          php artisan migrate --force
+
+          echo "=== Clear all caches ==="
+          php artisan cache:clear
+          php artisan config:clear
+          php artisan route:clear
+          php artisan view:clear
+
+          echo "=== Cache configs and routes ==="
+          php artisan config:cache
+          php artisan route:cache
+          php artisan view:cache
+
+          echo "=== Deployment complete successfully! ==="
+        EOF
